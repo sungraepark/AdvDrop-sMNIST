@@ -6,7 +6,6 @@ from tensorflow.python.framework import ops
 
 _LSTMStateTuple = collections.namedtuple("LSTMStateTuple", ("c", "h"))
 
-# keep_dims -> keepdims
 class LSTMStateTuple(_LSTMStateTuple):
     """Tuple used by LSTM Cells for `state_size`, `zero_state`, and output state.
     Stores two elements: `(c, h)`, in that order.
@@ -122,70 +121,15 @@ class DropoutMaskWrapper(RNNCell):
     """Operator adding dropout to inputs and outputs of the given cell."""
 
     def __init__(self, cell, state_mask, input_size=None, dtype=None):
-        """Create a cell with added input, state, and/or output dropout.
-        If `variational_recurrent` is set to `True` (**NOT** the default behavior),
-        then the same dropout mask is applied at every step, as described in:
-        Y. Gal, Z Ghahramani.  "A Theoretically Grounded Application of Dropout in
-        Recurrent Neural Networks".  https://arxiv.org/abs/1512.05287
-        Otherwise a different dropout mask is applied at every time step.
-        Args:
-          cell: an RNNCell, a projection to output_size is added to it.
-          input_keep_prob: unit Tensor or float between 0 and 1, input keep
-            probability; if it is constant and 1, no input dropout will be added.
-          output_keep_prob: unit Tensor or float between 0 and 1, output keep
-            probability; if it is constant and 1, no output dropout will be added.
-          state_keep_prob: unit Tensor or float between 0 and 1, output keep
-            probability; if it is constant and 1, no output dropout will be added.
-            State dropout is performed on the *output* states of the cell.
-          variational_recurrent: Python bool.  If `True`, then the same
-            dropout pattern is applied across all time steps per run call.
-            If this parameter is set, `input_size` **must** be provided.
-          input_size: (optional) (possibly nested tuple of) `TensorShape` objects
-            containing the depth(s) of the input tensors expected to be passed in to
-            the `DropoutWrapper`.  Required and used **iff**
-             `variational_recurrent = True` and `input_keep_prob < 1`.
-          dtype: (optional) The `dtype` of the input, state, and output tensors.
-            Required and used **iff** `variational_recurrent = True`.
-          seed: (optional) integer, the randomness seed.
-        Raises:
-          TypeError: if cell is not an RNNCell.
-          ValueError: if any of the keep_probs are not between 0 and 1.
-        """
-        # if not _like_rnncell(cell):
-        #  raise TypeError("The parameter cell is not a RNNCell.")
-
-        # Set cell, variational_recurrent, seed before running the code below
+        # state_mask : variational_recurrent dropout mask, which dimension is same with a hidden state at a time
         self._cell = cell
         self._state_mask = state_mask
 
-        self._recurrent_state_noise = state_mask
-
-        '''
-        if variational_recurrent:
-          if dtype is None:
-            raise ValueError(
-                "When variational_recurrent=True, dtype must be provided")
-    
-          if (not isinstance(self._input_keep_prob, numbers.Real) or
-              self._input_keep_prob < 1.0):
-            if input_size is None:
-              raise ValueError(
-                  "When variational_recurrent=True and input_keep_prob < 1.0 or "
-                  "is unknown, input_size must be provided")
-            self._recurrent_input_noise = _enumerated_map_structure( lambda i, s: batch_noise(s, inner_seed=self._gen_seed("input", i)), input_size)
-          
-        self._recurrent_state_noise = _enumerated_map_structure( lambda i, s: batch_noise(s, inner_seed=self._gen_seed("state", i)), cell.state_size)
-        self._recurrent_output_noise = _enumerated_map_structure( lambda i, s: batch_noise(s, inner_seed=self._gen_seed("output", i)), cell.output_size)
-        '''
-
     def set_random_noises(self):
-        self._recurrent_state_noise = _enumerated_map_structure(
+        self._state_mask = _enumerated_map_structure(
             lambda i, s: self.batch_noise(s, inner_seed=self._gen_seed("state", i)), self._cell.state_size)
 
     def convert_to_batch_shape(self, s):
-        # Prepend a 1 for the batch dimension; for recurrent
-        # variational dropout we use the same dropout mask for all
-        # batch elements.
         return tf.concat(([1], tensor_shape.TensorShape(s).as_list()), 0)
 
     def batch_noise(self, s, inner_seed):
@@ -213,33 +157,22 @@ class DropoutMaskWrapper(RNNCell):
 
     def _variational_recurrent_dropout_value(self, index, value, noise):
         """Performs dropout given the pre-calculated noise tensor."""
-        # uniform [keep_prob, 1.0 + keep_prob)
-        # random_tensor = keep_prob + noise
-
-        # 0. if [keep_prob, 1.0) and 1. if [1.0, 1.0 + keep_prob)
-        # binary_tensor = tf.floor(random_tensor)
         binary_tensor = noise
         sum_binary_tensor = tf.reduce_sum(binary_tensor, axis=1, keep_dims=True)
         sum_full_dims = tf.reduce_sum(tf.ones_like(binary_tensor), axis=1, keep_dims=True)
-        ratio_of_binary_tensor = sum_binary_tensor / sum_full_dims  # tf.div(sum_binary_tensor, sum_full_dims)
-
+        ratio_of_binary_tensor = sum_binary_tensor / sum_full_dims  
         ret = value / ratio_of_binary_tensor * binary_tensor
         ret.set_shape(value.get_shape())
         return ret
 
     def _dropout(self, values, salt_prefix, recurrent_noise):
         """Decides whether to perform standard dropout or recurrent dropout."""
-        # def dropout(i, v, n):
-        #    return self._variational_recurrent_dropout_value(i, v, n)
-        # return _enumerated_map_structure(dropout, values, recurrent_noise)
         return self._variational_recurrent_dropout_value(0, values, recurrent_noise)
 
     def __call__(self, inputs, state, scope=None):
-        """Run the cell with the declared dropouts."""
-
         output, new_state = self._cell(inputs, state, scope)
         c, h = new_state
-        new_h = self._dropout(h, "state", self._recurrent_state_noise)
+        new_h = self._dropout(h, "state", self._state_mask)
         return output, (c, new_h)
 
 
