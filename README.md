@@ -1,4 +1,4 @@
-# AdvDrop-sMNIST
+# Adversarial Dropout for Recurrent Neural Networks (sequential MNIST tasks)
 
 Tensorflow implementation in the paper "Adversarial Dropout for Reccurent Neural Networks" 
 
