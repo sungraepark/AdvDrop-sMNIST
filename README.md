@@ -1,5 +1,7 @@
 # AdvDrop-sMNIST
 
+Tensorflow implementation in the paper "Adversarial Dropout for Reccurent Neural Networks" 
+
 ## Requirements
  * Python 2.7
  * Tensorflow 1.4.1
