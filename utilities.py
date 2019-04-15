@@ -1,6 +1,8 @@
 import math
 import tensorflow as tf
 
+FLAGS = tf.app.flags.FLAGS
+
 def adv_cost_function(adv_py_x, py_x, Y):
     if FLAGS.adv_cost == 'ce':
         adv_cost = ce_loss(adv_py_x, Y)
